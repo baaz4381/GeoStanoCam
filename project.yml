@@ -1,0 +1,23 @@
+name: GeoStampCam
+options:
+  bundleIdPrefix: com.example
+  deploymentTarget:
+    iOS: "16.0"
+targets:
+  GeoStampCam:
+    type: application
+    platform: iOS
+    sources: [GeoStampCam]
+    info:
+      path: GeoStampCam/Info.plist
+      properties:
+        CFBundleDisplayName: GeoStamp Cam
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        NSCameraUsageDescription: Needed to take geo-stamped photos.
+        NSLocationWhenInUseUsageDescription: Needed to stamp your location on photos.
+        NSPhotoLibraryAddUsageDescription: Needed to save stamped photos to your library.
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.GeoStampCam
+        SWIFT_VERSION: "5.0"
