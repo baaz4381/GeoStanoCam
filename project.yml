@@ -7,9 +7,15 @@ targets:
   GeoStampCam:
     type: application
     platform: iOS
-    sources: [GeoStampCam]
+    sources:
+      - path: .
+        excludes:
+          - README.md
+          - project.yml
+          - Info.plist
+          - ".github/**"
     info:
-      path: GeoStampCam/Info.plist
+      path: Info.plist
       properties:
         CFBundleDisplayName: GeoStamp Cam
         UILaunchScreen: {}
