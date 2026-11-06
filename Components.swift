@@ -1,6 +1,5 @@
 import SwiftUI
 import AVFoundation
-import AVKit
 import UIKit
 
 // MARK: - Camera preview with tap-to-focus, pinch-to-zoom and volume-button shutter

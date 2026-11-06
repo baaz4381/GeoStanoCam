@@ -20,8 +20,7 @@ struct CameraScreen: View {
     var body: some View {
         GeometryReader { geo in
             let cfg = settings.cfg
-            let videoMode = vm.camera.mode == .video
-            let aspect: AspectOption = videoMode ? .r16x9 : cfg.aspect
+            let aspect = cfg.aspect
             let ratio = aspect.portraitRatio ?? 0.75
             let insets = Self.safeInsets(geo.safeAreaInsets)
             let isLandscape = geo.size.width > geo.size.height
@@ -67,7 +66,7 @@ struct CameraScreen: View {
         .onDisappear { if !showSettings { vm.stop() } }
         .onChange(of: showSettings) { open in vm.setUIActive(!open) }
         .onChange(of: scenePhase) { phase in
-            if phase != .active { vm.stopRecordingIfNeeded() }
+            if phase != .active { settings.flush() }
         }
         .sheet(isPresented: $showNote) { QuickNoteSheet() }
         .fullScreenCover(isPresented: $showSettings) { SettingsScreen() }
@@ -90,19 +89,13 @@ struct CameraScreen: View {
                 .offset(y: y0)
 
             VStack(spacing: 0) {
-                Group {
-                    if vm.camera.isRecording {
-                        recordingBar
-                    } else {
-                        topBar(cfg)
-                    }
-                }
-                .frame(height: Self.topH)
-                .padding(.top, insets.top)
-                .background(
-                    LinearGradient(colors: [Color.black.opacity(0.7), Color.clear],
-                                   startPoint: .top, endPoint: .bottom)
-                )
+                topBar(cfg)
+                    .frame(height: Self.topH)
+                    .padding(.top, insets.top)
+                    .background(
+                        LinearGradient(colors: [Color.black.opacity(0.7), Color.clear],
+                                       startPoint: .top, endPoint: .bottom)
+                    )
                 Spacer(minLength: 0)
                 bottomBar(bottomInset: insets.bottom)
             }
@@ -134,14 +127,9 @@ struct CameraScreen: View {
 
     private func landscapePanel(_ cfg: StampSettings) -> some View {
         VStack(spacing: 10) {
-            if vm.camera.isRecording {
-                recordingBar
-            } else {
-                HStack(spacing: 6) { flashButton; timerButton; tagButton }
-                HStack(spacing: 6) { noteButton; gearButton; aspectButton(cfg) }
-            }
+            HStack(spacing: 6) { flashButton; timerButton; tagButton }
+            HStack(spacing: 6) { noteButton; gearButton; aspectButton(cfg) }
             zoomChips(size: 34, spacing: 4)
-            if !vm.camera.isRecording { modeSwitch }
             HStack(spacing: 6) {
                 thumbButton
                 shutterButton
@@ -244,11 +232,6 @@ struct CameraScreen: View {
                 chip(cfg.useVerifiedTime ? "Phone clock is wrong. Using network time" : "Phone clock looks wrong",
                      color: .orange, icon: "clock.badge.exclamationmark")
             }
-            if vm.camera.micDenied && vm.camera.mode == .video {
-                Button { openSettings() } label: {
-                    chip("Microphone is off. Video will have no sound", color: .orange, icon: "mic.slash.fill")
-                }
-            }
         }
     }
 
@@ -267,20 +250,9 @@ struct CameraScreen: View {
     // MARK: Top controls (shared by the portrait bar and the landscape panel)
 
     private var flashIcon: String {
-        if vm.camera.mode == .video { return vm.camera.flashMode == .on ? "flashlight.on.fill" : "flashlight.off.fill" }
         if vm.camera.flashMode == .on { return "bolt.fill" }
         if vm.camera.flashMode == .auto { return "bolt.badge.automatic.fill" }
         return "bolt.slash.fill"
-    }
-
-    private var recordingBar: some View {
-        HStack(spacing: 8) {
-            Circle().fill(Color.red).frame(width: 12, height: 12)
-            Text(String(format: "%02d:%02d", vm.recordSeconds / 60, vm.recordSeconds % 60))
-                .font(.system(size: 20, weight: .bold, design: .monospaced))
-                .foregroundColor(.white)
-        }
-        .frame(maxWidth: .infinity)
     }
 
     private var flashButton: some View {
@@ -333,17 +305,9 @@ struct CameraScreen: View {
         }
     }
 
-    @ViewBuilder
     private func aspectButton(_ cfg: StampSettings) -> some View {
-        if vm.camera.mode == .photo {
-            Button { settings.cfg.aspect = cfg.aspect.next } label: {
-                Text(cfg.aspect.title)
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundColor(.white)
-                    .frame(minWidth: 40, minHeight: 40)
-            }
-        } else {
-            Text(cfg.videoQuality.title)
+        Button { settings.cfg.aspect = cfg.aspect.next } label: {
+            Text(cfg.aspect.title)
                 .font(.system(size: 14, weight: .bold))
                 .foregroundColor(.white)
                 .frame(minWidth: 40, minHeight: 40)
@@ -373,7 +337,6 @@ struct CameraScreen: View {
     private func bottomBar(bottomInset: CGFloat) -> some View {
         VStack(spacing: 10) {
             zoomChips()
-            if !vm.camera.isRecording { modeSwitch }
             HStack {
                 thumbButton.frame(maxWidth: .infinity)
                 shutterButton
@@ -394,29 +357,6 @@ struct CameraScreen: View {
                 .foregroundColor(.white)
                 .frame(width: 48, height: 48)
                 .background(Circle().fill(Color.white.opacity(0.15)))
-        }
-        .disabled(vm.camera.isRecording)
-        .opacity(vm.camera.isRecording ? 0.35 : 1)
-    }
-
-    private var modeSwitch: some View {
-        HStack(spacing: 4) {
-            modeButton("PHOTO", .photo)
-            modeButton("VIDEO", .video)
-        }
-        .padding(3)
-        .background(Capsule().fill(Color.black.opacity(0.45)))
-    }
-
-    private func modeButton(_ title: String, _ m: CaptureMode) -> some View {
-        let selected = vm.camera.mode == m
-        return Button { vm.setMode(m) } label: {
-            Text(title)
-                .font(.system(size: 12, weight: .heavy))
-                .foregroundColor(selected ? Color.black : Color.white.opacity(0.85))
-                .padding(.horizontal, 16)
-                .padding(.vertical, 6)
-                .background(Capsule().fill(selected ? Color.yellow : Color.clear))
         }
     }
 
@@ -443,15 +383,7 @@ struct CameraScreen: View {
         Button { vm.shutterTapped() } label: {
             ZStack {
                 Circle().stroke(Color.white, lineWidth: 4).frame(width: 74, height: 74)
-                if vm.camera.mode == .video {
-                    if vm.camera.isRecording {
-                        RoundedRectangle(cornerRadius: 6).fill(Color.red).frame(width: 30, height: 30)
-                    } else {
-                        Circle().fill(Color.red).frame(width: 60, height: 60).opacity(vm.isSaving ? 0.4 : 1)
-                    }
-                } else {
-                    Circle().fill(Color.white).frame(width: 60, height: 60).opacity(vm.isSaving ? 0.4 : 1)
-                }
+                Circle().fill(Color.white).frame(width: 60, height: 60).opacity(vm.isSaving ? 0.4 : 1)
                 if vm.isSaving { ProgressView().tint(.black) }
             }
         }

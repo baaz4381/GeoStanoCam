@@ -52,7 +52,7 @@ struct SettingsScreen: View {
                 Button("Reset settings", role: .destructive) { settings.cfg = StampSettings() }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("Your photos, videos and logo are not touched.")
+                Text("Your photos and logo are not touched.")
             }
         }
     }
@@ -172,13 +172,10 @@ struct SettingsScreen: View {
                     Button("Restart at 1", role: .destructive) { vm.resetSerial() }
                 }
             }
-            Picker("Video quality", selection: $settings.cfg.videoQuality) {
-                ForEach(VideoQuality.allCases) { Text($0.title).tag($0) }
-            }
         } header: {
             Text("Extras")
         } footer: {
-            Text("The QR code opens the exact spot in a maps app. Videos are recorded the way you hold the phone (upright or sideways), with the stamp updating every second. Change video quality before switching to Video mode.")
+            Text("The QR code opens the exact spot in a maps app.")
         }
     }
 
@@ -275,7 +272,7 @@ struct SettingsScreen: View {
         } header: {
             Text("Saving and trust")
         } footer: {
-            Text("Photos and videos are saved to your Photos app. If Photos access is off, they are kept in the Files app under On My iPhone > GeoStamp Cam so nothing is lost.")
+            Text("Photos are saved to your Photos app. If Photos access is off, they are kept in the Files app under On My iPhone > GeoStamp Cam so nothing is lost.")
         }
     }
 

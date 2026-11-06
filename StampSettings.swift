@@ -1,6 +1,5 @@
 import SwiftUI
 import UIKit
-import AVFoundation
 
 // MARK: - Option enums
 
@@ -23,18 +22,6 @@ enum StampTemplate: String, Codable, CaseIterable, Identifiable {
         case .compass: return "A live compass dial with heading, address, coordinates and time."
         }
     }
-}
-
-enum VideoQuality: String, Codable, CaseIterable, Identifiable {
-    case hd720, hd1080
-    var id: String { rawValue }
-    var title: String { self == .hd720 ? "720p" : "1080p" }
-    var preset: AVCaptureSession.Preset { self == .hd720 ? .hd1280x720 : .hd1920x1080 }
-    /// Portrait frame size the stamp overlay is drawn at.
-    var frameSize: CGSize {
-        self == .hd720 ? CGSize(width: 720, height: 1280) : CGSize(width: 1080, height: 1920)
-    }
-    var bitrate: Int { self == .hd720 ? 4_000_000 : 8_000_000 }
 }
 
 enum MapKind: String, Codable, CaseIterable, Identifiable {
@@ -156,7 +143,6 @@ struct StampSettings: Codable, Equatable {
     var showQR = false
     var showSerial = false
     var projects: [String] = []
-    var videoQuality: VideoQuality = .hd1080
 
     // Formats (all templates)
     var coordFormat: CoordFormat = .decimal
@@ -177,7 +163,6 @@ struct StampSettings: Codable, Equatable {
     var lockPortrait = false
 
     // Saving / trust
-    var saveToPhotos = true
     var saveOriginal = false
     var embedExif = true
     var useVerifiedTime = true
@@ -187,7 +172,7 @@ struct StampSettings: Codable, Equatable {
 
 final class SettingsStore: ObservableObject {
     @Published var cfg: StampSettings {
-        didSet { persist() }
+        didSet { schedulePersist() }
     }
     @Published private(set) var logo: UIImage? = nil
 
@@ -206,7 +191,20 @@ final class SettingsStore: ObservableObject {
         logo = UIImage(contentsOfFile: Self.logoURL.path)
     }
 
-    private func persist() {
+    private var persistWork: DispatchWorkItem?
+
+    /// Typing and slider drags change `cfg` many times a second; write to disk once things settle.
+    private func schedulePersist() {
+        persistWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.flush() }
+        persistWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: work)
+    }
+
+    /// Writes settings immediately. Also called when the app leaves the foreground.
+    func flush() {
+        persistWork?.cancel()
+        persistWork = nil
         if let d = try? JSONEncoder().encode(cfg) {
             UserDefaults.standard.set(d, forKey: Self.key)
         }

@@ -19,16 +19,12 @@ final class CameraViewModel: ObservableObject {
     @Published var phase = ""               // "", "Before", "After"
     @Published var timerSeconds = 0         // 0, 3, 10
     @Published var focusPoint: CGPoint?
-    @Published var recordSeconds = 0
 
     private var cancellables = Set<AnyCancellable>()
     private var toastTask: Task<Void, Never>?
     private var focusTask: Task<Void, Never>?
     private var clockTask: Task<Void, Never>?
-    private var recordTask: Task<Void, Never>?
-    private var recordSnapshot: CaptureSnapshot?
     private var cameraVisible = false
-    private var recordLandscape = false
     private var captureToken = 0
 
     private static let serialKey = "geostamp.serial"
@@ -106,7 +102,6 @@ final class CameraViewModel: ObservableObject {
     func stop() {
         cameraVisible = false
         UIApplication.shared.isIdleTimerDisabled = false
-        stopRecordingIfNeeded()
         camera.stop()
         clockTask?.cancel()
     }
@@ -136,7 +131,7 @@ final class CameraViewModel: ObservableObject {
 
     // MARK: Snapshot
 
-    func makeSnapshot(serial: Int? = nil, video: Bool = false) -> CaptureSnapshot {
+    func makeSnapshot(serial: Int? = nil) -> CaptureSnapshot {
         var s = CaptureSnapshot(
             date: timeVerifier.now,
             location: location.location,
@@ -149,23 +144,16 @@ final class CameraViewModel: ObservableObject {
             phase: phase
         )
         s.serial = serial
-        s.isVideo = video
         return s
     }
 
     var previewContent: StampContent {
         let cfg = settings.cfg
         let serial = cfg.showSerial ? serialPeek : nil
-        var snap = makeSnapshot(serial: serial, video: camera.mode == .video)
-        snap.withSeconds = camera.isRecording
-        return StampComposer.build(snap, cfg: cfg, logo: settings.logo)
+        return StampComposer.build(makeSnapshot(serial: serial), cfg: cfg, logo: settings.logo)
     }
 
     // MARK: Controls
-
-    func setMode(_ mode: CaptureMode) {
-        camera.setMode(mode, quality: settings.cfg.videoQuality)
-    }
 
     func cycleTimer() {
         timerSeconds = timerSeconds == 0 ? 3 : (timerSeconds == 3 ? 10 : 0)
@@ -203,10 +191,6 @@ final class CameraViewModel: ObservableObject {
     func shutterTapped() {
         guard camera.isConfigured, countdown == nil else { return }
 
-        if camera.mode == .video {
-            if camera.isRecording { stopRecording() } else if !isSaving { beginVideoWithTimer() }
-            return
-        }
         guard !isSaving else { return }
         if timerSeconds > 0 {
             runCountdown { [weak self] in self?.capture() }
@@ -273,12 +257,13 @@ final class CameraViewModel: ObservableObject {
             return
         }
 
+        // One Photos transaction for the stamped photo (and the original, if asked), so a failure
+        // can never leave a half-saved pair behind or write a second copy to Files.
         var savedToPhotos = false
         do {
-            try await PhotosSaver.save(jpeg: out.stamped, location: snapshot.location, date: snapshot.date)
-            if let original = out.original {
-                try await PhotosSaver.save(jpeg: original, location: snapshot.location, date: snapshot.date)
-            }
+            var files = [out.stamped]
+            if let original = out.original { files.append(original) }
+            try await PhotosSaver.save(jpegs: files, location: snapshot.location, date: snapshot.date)
             savedToPhotos = true
         } catch {
             savedToPhotos = false
@@ -300,117 +285,6 @@ final class CameraViewModel: ObservableObject {
         } else {
             UINotificationFeedbackGenerator().notificationOccurred(.error)
             showToast("Could not save the photo. Check storage and Photos access.")
-        }
-    }
-
-    // MARK: Video
-
-    private func beginVideoWithTimer() {
-        if timerSeconds > 0 {
-            runCountdown { [weak self] in self?.startRecording() }
-        } else {
-            startRecording()
-        }
-    }
-
-    private func overlayContent(_ snap: CaptureSnapshot) -> StampContent {
-        StampComposer.build(snap, cfg: settings.cfg, logo: settings.logo)
-    }
-
-    private func refreshOverlay() {
-        guard var base = recordSnapshot else { return }
-        let cfg = settings.cfg
-        var live = makeSnapshot(serial: base.serial, video: true)
-        live.withSeconds = true
-        live.phase = base.phase
-        base = live
-        let content = overlayContent(base)
-        let portrait = cfg.videoQuality.frameSize
-        let size = recordLandscape ? CGSize(width: portrait.height, height: portrait.width) : portrait
-        camera.recorder.setOverlay(StampRenderer.overlay(size: size, content: content, cfg: cfg))
-    }
-
-    private func startRecording() {
-        let cfg = settings.cfg
-        UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
-
-        var start = makeSnapshot(serial: cfg.showSerial ? serialPeek : nil, video: true)
-        start.withSeconds = true
-        recordSnapshot = start
-
-        let orientation = camera.recordingOrientation()
-        recordLandscape = (orientation == .landscapeLeft || orientation == .landscapeRight)
-        refreshOverlay()                                    // overlay must exist before the first frame
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".mp4")
-        camera.startRecording(url: url, bitrate: cfg.videoQuality.bitrate, orientation: orientation)
-        recordSeconds = 0
-
-        recordTask?.cancel()
-        recordTask = Task { [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
-                guard let self, !Task.isCancelled else { return }
-                self.recordSeconds += 1
-                self.refreshOverlay()                       // keeps seconds and position live
-            }
-        }
-    }
-
-    func stopRecordingIfNeeded() {
-        if camera.isRecording { stopRecording() }
-    }
-
-    private func stopRecording() {
-        recordTask?.cancel()
-        isSaving = true
-        let start = recordSnapshot
-        let cfg = settings.cfg
-        camera.stopRecording { [weak self] result in
-            guard let self else { return }
-            switch result {
-            case .failure:
-                self.isSaving = false
-                self.showToast("Video was not saved. Please try again.")
-            case .success(let (url, duration)):
-                Task { await self.finishVideo(url: url, duration: duration, start: start, cfg: cfg) }
-            }
-        }
-    }
-
-    private func finishVideo(url: URL, duration: Double, start: CaptureSnapshot?, cfg: StampSettings) async {
-        guard let snap = start else {
-            isSaving = false
-            return
-        }
-        if let n = snap.serial { commitSerial(n) }
-        let thumb = await Task.detached(priority: .utility, operation: { Thumbnails.video(url: url, maxPixel: 160) }).value
-
-        var saved = false
-        do {
-            try await PhotosSaver.saveVideo(at: url, location: snap.location, date: snap.date)
-            saved = true
-        } catch {
-            saved = false
-        }
-        var kept = false
-        if saved {
-            try? FileManager.default.removeItem(at: url)
-        } else {
-            kept = BackupFolder.move(video: url, date: snap.date)
-        }
-
-        if let thumb { lastThumb = thumb }
-        isSaving = false
-        recordSeconds = 0
-        if saved {
-            UINotificationFeedbackGenerator().notificationOccurred(.success)
-            showToast("Video saved to Photos")
-        } else if kept {
-            UINotificationFeedbackGenerator().notificationOccurred(.warning)
-            showToast("Photos access is off. Video saved in Files > GeoStamp Cam instead.")
-        } else {
-            UINotificationFeedbackGenerator().notificationOccurred(.error)
-            showToast("Could not save the video. Check storage and Photos access.")
         }
     }
 }

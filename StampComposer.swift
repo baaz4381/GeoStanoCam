@@ -25,7 +25,6 @@ enum StampComposer {
         c.logo = cfg.showLogo ? logo : nil
 
         var badges: [String] = []
-        if s.imported { badges.append("IMPORTED") }
         if !s.phase.isEmpty { badges.append(s.phase.uppercased()) }
         if !badges.isEmpty { c.badge = badges.joined(separator: " · ") }
 
@@ -51,12 +50,12 @@ enum StampComposer {
 
         // Date and time
         if wantDate {
-            c.lines.append(dateText(s.date, cfg: cfg, withSeconds: s.withSeconds))
+            c.lines.append(dateText(s.date, cfg: cfg))
         }
 
         // Running number
         if let n = s.serial {
-            c.lines.append("\(s.isVideo ? "Video" : "Photo") No. \(n)")
+            c.lines.append("Photo No. \(n)")
         }
 
         // Compass heading line
@@ -148,15 +147,23 @@ enum StampComposer {
         return String(format: "%d°%02d'%04.1f\"%@", d, m, s, ref)
     }
 
-    static func dateText(_ date: Date, cfg: StampSettings, withSeconds: Bool = false) -> String {
+    /// DateFormatter is expensive to create and the live preview calls this several times a second,
+    /// so one formatter per pattern is kept and reused (DateFormatter is thread-safe on iOS 7+).
+    private static var formatters: [String: DateFormatter] = [:]
+    private static let formatterLock = NSLock()
+
+    private static func formatter(_ pattern: String) -> DateFormatter {
+        formatterLock.lock(); defer { formatterLock.unlock() }
+        if let f = formatters[pattern] { return f }
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
-        var pattern = cfg.dateStyle.pattern
-        if withSeconds && !pattern.contains(":ss") {
-            pattern = pattern.replacingOccurrences(of: "mm", with: "mm:ss")
-        }
         f.dateFormat = pattern
-        var text = f.string(from: date)
+        formatters[pattern] = f
+        return f
+    }
+
+    static func dateText(_ date: Date, cfg: StampSettings) -> String {
+        var text = formatter(cfg.dateStyle.pattern).string(from: date)
         if cfg.showTimeZone {
             let secs = TimeZone.current.secondsFromGMT(for: date)
             let sign = secs >= 0 ? "+" : "-"

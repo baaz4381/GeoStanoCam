@@ -36,7 +36,6 @@ targets:
         LSSupportsOpeningDocumentsInPlace: true
         ITSAppUsesNonExemptEncryption: false
         NSCameraUsageDescription: GeoStamp Cam uses the camera to take photos with your location and time stamped on them.
-        NSMicrophoneUsageDescription: GeoStamp Cam uses the microphone only when you record a video with sound.
         NSLocationWhenInUseUsageDescription: GeoStamp Cam uses your location to stamp coordinates, address, altitude and compass direction on your photos.
         NSPhotoLibraryAddUsageDescription: GeoStamp Cam saves your stamped photos to your Photos library.
     settings:

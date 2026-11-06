@@ -3,74 +3,36 @@ import UIKit
 /// Burns the stamp into the pixels of the photo, so it cannot be removed without editing the image.
 enum StampRenderer {
 
-    // MARK: Pre-processing
+    // MARK: Rendering
 
-    static func mirrored(_ img: UIImage) -> UIImage {
-        let fmt = UIGraphicsImageRendererFormat()
-        fmt.scale = 1
-        fmt.opaque = true
-        let size = img.size
-        return UIGraphicsImageRenderer(size: size, format: fmt).image { ctx in
-            ctx.cgContext.translateBy(x: size.width, y: 0)
-            ctx.cgContext.scaleBy(x: -1, y: 1)
-            img.draw(in: CGRect(origin: .zero, size: size))
+    /// Mirror (front camera), centre-crop to the chosen shape and draw the stamp in ONE pass.
+    /// The old pipeline redrew the full-resolution photo three times (mirror, crop, stamp).
+    static func render(photo: UIImage, content: StampContent, cfg: StampSettings, mirror: Bool) -> UIImage {
+        let src = photo.size
+        var out = src
+        if let r = cfg.aspect.portraitRatio {
+            let isPortrait = src.height >= src.width
+            let target = isPortrait ? r : 1 / r             // desired width / height
+            if abs(src.width / src.height - target) >= 0.002 {
+                if src.width / src.height > target { out.width = (src.height * target).rounded() }
+                else { out.height = (src.width / target).rounded() }
+            }
         }
-    }
-
-    static func crop(_ img: UIImage, to option: AspectOption) -> UIImage {
-        guard let r = option.portraitRatio else { return img }
-        let s = img.size
-        let isPortrait = s.height >= s.width
-        let target = isPortrait ? r : 1 / r          // desired width / height
-        if abs(s.width / s.height - target) < 0.002 { return img }
-
-        var cw = s.width, ch = s.height
-        if s.width / s.height > target { cw = s.height * target } else { ch = s.width / target }
-        let origin = CGPoint(x: (s.width - cw) / 2, y: (s.height - ch) / 2)
+        let origin = CGPoint(x: (out.width - src.width) / 2, y: (out.height - src.height) / 2)
 
         let fmt = UIGraphicsImageRendererFormat()
         fmt.scale = 1
         fmt.opaque = true
-        return UIGraphicsImageRenderer(size: CGSize(width: cw, height: ch), format: fmt).image { _ in
-            img.draw(at: CGPoint(x: -origin.x, y: -origin.y))
-        }
-    }
-
-    /// Shrinks very large images (e.g. 48 MP imports) so rendering cannot run out of memory.
-    static func downscaled(_ img: UIImage, maxSide: CGFloat) -> UIImage {
-        let longest = max(img.size.width, img.size.height)
-        guard longest > maxSide, longest > 0 else { return img }
-        let k = maxSide / longest
-        let size = CGSize(width: (img.size.width * k).rounded(), height: (img.size.height * k).rounded())
-        let fmt = UIGraphicsImageRendererFormat()
-        fmt.scale = 1
-        fmt.opaque = true
-        return UIGraphicsImageRenderer(size: size, format: fmt).image { _ in
-            img.draw(in: CGRect(origin: .zero, size: size))
-        }
-    }
-
-    // MARK: Public rendering
-
-    /// Photo with the stamp drawn on it.
-    static func render(photo: UIImage, content: StampContent, cfg: StampSettings) -> UIImage {
-        let size = photo.size
-        let fmt = UIGraphicsImageRendererFormat()
-        fmt.scale = 1
-        fmt.opaque = true
-        return UIGraphicsImageRenderer(size: size, format: fmt).image { ctx in
-            photo.draw(in: CGRect(origin: .zero, size: size))
-            drawStamp(in: ctx.cgContext, size: size, content: content, cfg: cfg)
-        }
-    }
-
-    /// Transparent image holding only the stamp. Used for video, where it is composited on every frame.
-    static func overlay(size: CGSize, content: StampContent, cfg: StampSettings) -> UIImage {
-        let fmt = UIGraphicsImageRendererFormat()
-        fmt.scale = 1
-        fmt.opaque = false
-        return UIGraphicsImageRenderer(size: size, format: fmt).image { ctx in
-            drawStamp(in: ctx.cgContext, size: size, content: content, cfg: cfg)
+        return UIGraphicsImageRenderer(size: out, format: fmt).image { ctx in
+            let c = ctx.cgContext
+            c.saveGState()
+            if mirror {
+                c.translateBy(x: out.width, y: 0)
+                c.scaleBy(x: -1, y: 1)
+            }
+            photo.draw(in: CGRect(origin: origin, size: src))
+            c.restoreGState()
+            drawStamp(in: c, size: out, content: content, cfg: cfg)
         }
     }
 
@@ -175,25 +137,17 @@ enum PhotoPipeline {
                         snapshot: CaptureSnapshot,
                         cfg: StampSettings,
                         logo: UIImage?,
-                        mirror: Bool,
-                        crop: Bool = true,
-                        maxSide: CGFloat? = nil) -> ProcessedPhoto? {
-        guard var img = UIImage(data: data) else { return nil }
-        if let m = maxSide { img = StampRenderer.downscaled(img, maxSide: m) }
-        if mirror { img = StampRenderer.mirrored(img) }
-        if crop { img = StampRenderer.crop(img, to: cfg.aspect) }
+                        mirror: Bool) -> ProcessedPhoto? {
+        guard let img = UIImage(data: data) else { return nil }
 
         let content = StampComposer.build(snapshot, cfg: cfg, logo: logo)
-        let stamped = StampRenderer.render(photo: img, content: content, cfg: cfg)
-        guard let jpeg = stamped.jpegData(compressionQuality: 0.92) else { return nil }
+        let stamped = StampRenderer.render(photo: img, content: content, cfg: cfg, mirror: mirror)
 
-        let finalData: Data
-        if cfg.embedExif {
-            let comment = "GeoStamp Cam | " + (snapshot.address.full.isEmpty ? "no address" : snapshot.address.full)
-            finalData = ExifWriter.embed(jpeg: jpeg, snapshot: snapshot, comment: comment)
-        } else {
-            finalData = jpeg
-        }
-        return ProcessedPhoto(stamped: finalData, original: cfg.saveOriginal ? data : nil)
+        // Encode once, with the GPS / time metadata written in the same step (no second JPEG pass).
+        let comment = "GeoStamp Cam | " + (snapshot.address.full.isEmpty ? "no address" : snapshot.address.full)
+        guard let jpeg = ExifWriter.encode(stamped, quality: 0.92,
+                                           snapshot: cfg.embedExif ? snapshot : nil,
+                                           comment: comment) else { return nil }
+        return ProcessedPhoto(stamped: jpeg, original: cfg.saveOriginal ? data : nil)
     }
 }

@@ -56,11 +56,7 @@ struct CaptureSnapshot {
     var map: UIImage?
     var simulated: Bool
     var phase: String
-    // Added later, all optional-by-default so older call sites keep working.
     var serial: Int? = nil
-    var isVideo = false
-    var imported = false
-    var withSeconds = false
 }
 
 /// The text and images that go into the stamp. Used by both the live preview and the final render.

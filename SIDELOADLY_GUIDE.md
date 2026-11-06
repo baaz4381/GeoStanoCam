@@ -55,7 +55,6 @@ fixes on the first build are normal.
    - Camera
    - Location: **While Using the App**, with **Precise Location** on
    - Photos (add photos only)
-   - Microphone (asked the first time you switch to Video)
 
 ### Free Apple ID limits
 - The app **expires after 7 days**. Run Sideloadly again with the same .ipa to renew it. Your photos and settings
@@ -71,21 +70,17 @@ Go **outside or near a window** first so GPS can get a fix.
 
 | # | Test | Expected |
 |---|---|---|
-| 1 | Open the Camera tab | Chip top-left turns green ("GPS ±10 m" or better) within a minute |
+| 1 | Open the app | Chip top-left turns green ("GPS ±10 m" or better) within a minute |
 | 2 | Look at the stamp | Address, coordinates, date and time appear and the map fills in |
-| 3 | Take a photo | "Saved to Photos and gallery". Thumbnail appears bottom-left |
+| 3 | Take a photo | "Saved to Photos". Thumbnail appears bottom-left |
 | 4 | Photos app > open the photo > swipe up | A map pin shows where it was taken |
 | 5 | Settings: change Template, toggle fields | Live preview changes. New photos match |
-| 6 | Tap **Tag** to Before, shoot, then After, shoot | Gallery shows yellow tags. PDF pairs them |
-| 7 | Switch to **VIDEO**, record 10 seconds | Timer runs. Saved video shows the stamp with the clock moving |
-| 8 | Gallery > **+** > pick an old photo | Stamped copy appears marked IMPORTED. If it had GPS, the stamp shows it |
-| 9 | Gallery > Select > a few items > PDF, Data (CSV or KML), Share | Files open in the share sheet |
-| 10 | Photo detail > **Verify** | Green "File is unchanged" |
-| 11 | Settings > QR code on, take a photo, scan the QR with another phone | Opens a map at that spot |
-| 12 | Settings > Running photo number on | Stamp shows Photo No. 1, 2, 3 |
-| 13 | Camera: pinch, tap to focus, 0.5x chip, timer, flash | Each works |
-| 14 | Press a volume button on the camera screen | Takes a photo (iOS 17.2 or later) |
-| 15 | Play music, open the camera, take a photo | Music keeps playing |
-| 16 | Turn on Airplane Mode, take a photo | Photo still saves. Stamp shows coordinates, no address or weather |
+| 6 | Tap **Tag** to Before, shoot, then After, shoot | Stamp shows a BEFORE / AFTER badge |
+| 7 | Settings > QR code on, take a photo, scan the QR with another phone | Opens a map at that spot |
+| 8 | Settings > Running photo number on | Stamp shows Photo No. 1, 2, 3 |
+| 9 | Camera: pinch, tap to focus, 0.5x chip, timer, flash | Each works |
+| 10 | Press a volume button on the camera screen | Takes a photo (iOS 17.2 or later) |
+| 11 | Play music, open the camera, take a photo | Music keeps playing |
+| 12 | Turn on Airplane Mode, take a photo | Photo still saves. Stamp shows coordinates, no address or weather |
 
 Tell me which numbers fail and what you see, and I will fix them.

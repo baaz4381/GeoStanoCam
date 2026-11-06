@@ -30,7 +30,22 @@ enum QRMaker {
 
 /// Compass dial that rotates with the phone's heading. Replaces the map in the Compass template.
 enum CompassDial {
+    private static let lock = NSLock()
+    private static var cache: (degrees: Int, image: UIImage)?
+
+    /// The live preview asks for the dial on every refresh. Drawing it is the costliest part of the
+    /// Compass template, so the last image is reused until the heading changes by a whole degree.
     static func image(heading: Double, side: CGFloat = 240) -> UIImage {
+        let degrees = Int(heading.rounded())
+        lock.lock()
+        if let c = cache, c.degrees == degrees { lock.unlock(); return c.image }
+        lock.unlock()
+        let img = draw(heading: Double(degrees), side: side)
+        lock.lock(); cache = (degrees, img); lock.unlock()
+        return img
+    }
+
+    private static func draw(heading: Double, side: CGFloat) -> UIImage {
         let size = CGSize(width: side, height: side)
         let fmt = UIGraphicsImageRendererFormat()
         fmt.scale = 1
